@@ -1,7 +1,10 @@
 package com.swmansion.kmpmaps.core
 
+import android.Manifest
 import android.graphics.Color as AndroidColor
+import android.content.pm.PackageManager
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -15,6 +18,7 @@ import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraPosition as MapLibreCameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
@@ -80,6 +84,7 @@ public actual fun Map(
                 map.uiSettings.isScrollGesturesEnabled = uiSettings.scrollEnabled
                 map.uiSettings.isRotateGesturesEnabled = uiSettings.rotateEnabled
                 map.uiSettings.isTiltGesturesEnabled = uiSettings.togglePitchEnabled
+                map.configureUserLocation(context, properties.isMyLocationEnabled)
                 map.addMapTilerContent(markers, circles, polygons, polylines, onMarkerClick)
                 map.addOnMapClickListener { latLng ->
                     onMapClick?.invoke(Coordinates(latLng.latitude, latLng.longitude))
@@ -112,6 +117,21 @@ public actual fun Map(
             mapView.onStop()
             mapView.onDestroy()
         }
+    }
+}
+
+private fun MapLibreMap.configureUserLocation(context: android.content.Context, enabled: Boolean) {
+    if (!enabled) return
+    val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    if (!fineGranted && !coarseGranted) return
+    val currentStyle = style ?: return
+
+    runCatching {
+        locationComponent.activateLocationComponent(
+            LocationComponentActivationOptions.builder(context, currentStyle).build(),
+        )
+        locationComponent.isLocationComponentEnabled = true
     }
 }
 
