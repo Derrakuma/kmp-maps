@@ -1,6 +1,6 @@
 [versions]
 accompanistPermissions = "0.37.3"
-agp = "8.12.0"
+agp = "8.9.3"
 android-compileSdk = "36"
 android-minSdk = "24"
 android-targetSdk = "36"
@@ -19,6 +19,7 @@ kotlinXCoroutines = "1.10.2"
 kotlinXSerializationJson = "1.9.0"
 mavenPublish = "0.34.0"
 playServicesMaps = "19.2.0"
+maplibreAndroid = "11.11.0"
 
 [libraries]
 androidX-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidXActivity" }
@@ -33,6 +34,7 @@ jetBrains-kotlinX-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-co
 jetBrains-kotlinX-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinXSerializationJson" }
 kcef = { module = "dev.datlag:kcef", version.ref = "kcef" }
 kevinnZou-composeWebViewMultiplatformDesktop = { module = "io.github.kevinnzou:compose-webview-multiplatform-desktop", version.ref = "composeWebViewMultiplatformDesktop" }
+maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibreAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

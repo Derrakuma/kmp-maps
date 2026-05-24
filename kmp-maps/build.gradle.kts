@@ -7,7 +7,6 @@ subprojects {
 
 dependencies {
     dokka(project(":kmp-maps:core"))
-    dokka(project(":kmp-maps:google-maps"))
 }
 
 dokka {

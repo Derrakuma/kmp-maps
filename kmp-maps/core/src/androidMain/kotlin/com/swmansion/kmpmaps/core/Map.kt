@@ -1,40 +1,40 @@
 package com.swmansion.kmpmaps.core
 
-import android.Manifest
-import android.util.Log
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
+import android.graphics.Color as AndroidColor
+import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalDensity
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
-import com.google.maps.android.compose.Circle
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapEffect
-import com.google.maps.android.compose.MapsComposeExperimentalApi
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerComposable
-import com.google.maps.android.compose.MarkerState
-import com.google.maps.android.compose.Polygon
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.clustering.Clustering
-import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.data.Layer
-import com.google.maps.android.data.geojson.GeoJsonLayer as GoogleGeoJsonLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.MarkerOptions
+import org.maplibre.android.camera.CameraPosition as MapLibreCameraPosition
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
+import org.maplibre.android.style.layers.PropertyFactory.circleRadius
+import org.maplibre.android.style.layers.PropertyFactory.fillColor
+import org.maplibre.android.style.layers.PropertyFactory.fillOpacity
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
+import org.maplibre.geojson.Polygon as GeoJsonPolygon
 
-/** Android implementation of the Map composable using Google Maps. */
-@OptIn(ExperimentalPermissionsApi::class, MapsComposeExperimentalApi::class)
 @Composable
 public actual fun Map(
     modifier: Modifier,
@@ -57,253 +57,130 @@ public actual fun Map(
     onPOIClick: ((Coordinates) -> Unit)?,
     onMapLoaded: (() -> Unit)?,
     geoJsonLayers: List<GeoJsonLayer>,
-    customMarkerContent: Map<String, @Composable (Marker) -> Unit>,
-    webCustomMarkerContent: Map<String, (Marker) -> String>,
+    customMarkerContent: kotlin.collections.Map<String, @Composable (Marker) -> Unit>,
+    webCustomMarkerContent: kotlin.collections.Map<String, (Marker) -> String>,
 ) {
-    var mapLoaded by remember { mutableStateOf(false) }
-    val locationPermissionState = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
-
-    LaunchedEffect(properties.isMyLocationEnabled) {
-        if (properties.isMyLocationEnabled && !locationPermissionState.status.isGranted) {
-            locationPermissionState.launchPermissionRequest()
+    val context = LocalContext.current
+    val mapView = remember {
+        MapLibre.getInstance(context)
+        MapView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            onCreate(null)
         }
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val density = LocalDensity.current
-        val viewportWidthPx = with(density) { maxWidth.roundToPx() }
-        val viewportHeightPx = with(density) { maxHeight.roundToPx() }
+    AndroidView(factory = { mapView }, modifier = modifier)
 
-        val cameraPositionState = rememberCameraPositionState {
-            cameraPosition?.let {
-                position = it.toGoogleMapsCameraPosition(viewportWidthPx, viewportHeightPx)
-            }
-        }
-
-        LaunchedEffect(cameraPosition, mapLoaded) {
-            if (mapLoaded && cameraPosition != null) {
-                cameraPositionState.move(cameraPosition.toCameraUpdate())
-            }
-        }
-
-        GoogleMap(
-            mapColorScheme = properties.mapTheme.toGoogleMapsTheme(),
-            modifier = modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            properties = properties.toGoogleMapsProperties(locationPermissionState),
-            uiSettings = uiSettings.toGoogleMapsUiSettings(),
-            onMapClick =
-                onMapClick?.let { callback ->
-                    { latLng -> callback(Coordinates(latLng.latitude, latLng.longitude)) }
-                },
-            onMapLongClick =
-                onMapLongClick?.let { callback ->
-                    { latLng -> callback(Coordinates(latLng.latitude, latLng.longitude)) }
-                },
-            onPOIClick =
-                onPOIClick?.let { callback ->
-                    { poi -> callback(Coordinates(poi.latLng.latitude, poi.latLng.longitude)) }
-                },
-            onMapLoaded = {
-                mapLoaded = true
+    LaunchedEffect(mapView, cameraPosition, properties, uiSettings, markers, circles, polygons, polylines) {
+        mapView.getMapAsync { map ->
+            map.setStyle(Style.Builder().fromUri(MapConfiguration.mapTilerStyleUrl)) {
+                cameraPosition?.let { map.cameraPosition = it.toMapLibreCameraPosition() }
+                map.uiSettings.isCompassEnabled = uiSettings.compassEnabled
+                map.uiSettings.isZoomGesturesEnabled = uiSettings.zoomEnabled
+                map.uiSettings.isScrollGesturesEnabled = uiSettings.scrollEnabled
+                map.uiSettings.isRotateGesturesEnabled = uiSettings.rotateEnabled
+                map.uiSettings.isTiltGesturesEnabled = uiSettings.togglePitchEnabled
+                map.addMapTilerContent(markers, circles, polygons, polylines, onMarkerClick)
+                map.addOnMapClickListener { latLng ->
+                    onMapClick?.invoke(Coordinates(latLng.latitude, latLng.longitude))
+                    onMapClick != null
+                }
+                map.addOnMapLongClickListener { latLng ->
+                    onMapLongClick?.invoke(Coordinates(latLng.latitude, latLng.longitude))
+                    onMapLongClick != null
+                }
+                map.addOnCameraIdleListener {
+                    val position = map.cameraPosition
+                    onCameraMove?.invoke(
+                        CameraPosition(
+                            coordinates = Coordinates(position.target?.latitude ?: 0.0, position.target?.longitude ?: 0.0),
+                            zoom = position.zoom.toFloat(),
+                            androidCameraPosition = AndroidCameraPosition(bearing = position.bearing.toFloat(), tilt = position.tilt.toFloat()),
+                        ),
+                    )
+                }
                 onMapLoaded?.invoke()
-            },
-        ) {
-            MapEffect(properties.contentPadding) { map ->
-                properties.contentPadding?.run {
-                    map.setPadding(start.toInt(), top.toInt(), end.toInt(), bottom.toInt())
-                }
             }
+        }
+    }
 
-            var androidGeoJsonLayers by remember {
-                mutableStateOf<Map<Int, GoogleGeoJsonLayer>>(emptyMap())
-            }
-
-            var geoJsonExtractedMarkers by remember {
-                mutableStateOf<Map<Int, List<Marker>>>(emptyMap())
-            }
-
-            MapEffect(geoJsonLayers) { map ->
-                runCatching {
-                        val desiredKeys = geoJsonLayers.indices.toSet()
-                        val keysToRemove = androidGeoJsonLayers.keys - desiredKeys
-                        keysToRemove.forEach { k -> androidGeoJsonLayers[k]?.removeLayerFromMap() }
-
-                        androidGeoJsonLayers =
-                            androidGeoJsonLayers.filterKeys(desiredKeys::contains)
-                        geoJsonExtractedMarkers =
-                            geoJsonExtractedMarkers.filterKeys(desiredKeys::contains)
-
-                        geoJsonLayers.forEachIndexed { index, geo ->
-                            if (geo.visible == false) {
-                                androidGeoJsonLayers[index]?.removeLayerFromMap()
-                                androidGeoJsonLayers = androidGeoJsonLayers - index
-                                geoJsonExtractedMarkers = geoJsonExtractedMarkers - index
-                                return@forEachIndexed
-                            }
-
-                            androidGeoJsonLayers[index]?.removeLayerFromMap()
-
-                            map.renderGeoJsonLayer(geo, clusterSettings, onMarkerClick)?.let {
-                                androidGeoJsonLayers = androidGeoJsonLayers + (index to it.layer)
-                                geoJsonExtractedMarkers =
-                                    geoJsonExtractedMarkers + (index to it.extractedMarkers)
-                            }
-                        }
-                    }
-                    .onFailure { t -> Log.e("KMPMaps", "Failed to render GeoJSON layers", t) }
-            }
-
-            DisposableEffect(Unit) {
-                onDispose { androidGeoJsonLayers.values.forEach(Layer::removeLayerFromMap) }
-            }
-
-            if (clusterSettings.enabled) {
-                val clusterItems =
-                    remember(markers, geoJsonExtractedMarkers) {
-                        (markers + geoJsonExtractedMarkers.values.flatten()).map(
-                            ::MarkerClusterItem
-                        )
-                    }
-
-                Clustering(
-                    items = clusterItems,
-                    onClusterClick = { androidCluster ->
-                        clusterSettings.onClusterClick?.invoke(androidCluster.toNativeCluster())
-                            ?: false
-                    },
-                    onClusterItemClick = { clusterItem ->
-                        onMarkerClick?.invoke(clusterItem.marker)
-                        onMarkerClick == null
-                    },
-                    clusterContent = { androidCluster ->
-                        if (clusterSettings.clusterContent != null) {
-                            clusterSettings.clusterContent.invoke(androidCluster.toNativeCluster())
-                        } else {
-                            DefaultCluster(size = androidCluster.size)
-                        }
-                    },
-                    clusterItemContent = { clusterItem ->
-                        customMarkerContent[clusterItem.marker.contentId]?.invoke(
-                            clusterItem.marker
-                        ) ?: DefaultPin(clusterItem.marker)
-                    },
-                )
-            } else {
-                markers.forEach { marker ->
-                    key(marker.getId(), marker.contentId) {
-                        val markerState =
-                            remember(marker.getId()) {
-                                MarkerState(marker.coordinates.toGoogleMapsLatLng())
-                            }
-
-                        LaunchedEffect(marker.coordinates) {
-                            val newLatLng = marker.coordinates.toGoogleMapsLatLng()
-                            if (markerState.position != newLatLng) {
-                                markerState.position = newLatLng
-                            }
-                        }
-
-                        val content = customMarkerContent[marker.contentId]
-
-                        if (marker.androidMarkerOptions.draggable) {
-                            LaunchedEffect(markerState.isDragging) {
-                                if (!markerState.isDragging) {
-                                    marker.coordinates = markerState.position.toCoordinates()
-                                    onMarkerDragEnd?.invoke(marker)
-                                }
-                            }
-                        }
-
-                        if (content != null) {
-                            MarkerComposable(
-                                state = markerState,
-                                title = marker.title,
-                                anchor = marker.androidMarkerOptions.anchor.toOffset(),
-                                draggable = marker.androidMarkerOptions.draggable,
-                                snippet = marker.androidMarkerOptions.snippet,
-                                zIndex = marker.androidMarkerOptions.zIndex ?: 0.0f,
-                                onClick = {
-                                    onMarkerClick?.invoke(marker)
-                                    onMarkerClick == null
-                                },
-                                content = { content(marker) },
-                            )
-                        } else {
-                            Marker(
-                                state = markerState,
-                                title = marker.title,
-                                anchor = marker.androidMarkerOptions.anchor.toOffset(),
-                                draggable = marker.androidMarkerOptions.draggable,
-                                snippet = marker.androidMarkerOptions.snippet,
-                                zIndex = marker.androidMarkerOptions.zIndex ?: 0.0f,
-                                onClick = {
-                                    onMarkerClick?.invoke(marker)
-                                    onMarkerClick == null
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            circles.forEach { circle ->
-                Circle(
-                    center = circle.center.toGoogleMapsLatLng(),
-                    radius = circle.radius.toDouble(),
-                    strokeColor = Color(circle.lineColor?.toArgb() ?: android.graphics.Color.BLACK),
-                    strokeWidth = circle.lineWidth ?: 10f,
-                    fillColor = Color(circle.color?.toArgb() ?: android.graphics.Color.TRANSPARENT),
-                    clickable = true,
-                    onClick = {
-                        if (onCircleClick != null) {
-                            onCircleClick(circle)
-                        } else {
-                            onMapClick?.invoke(circle.center)
-                        }
-                    },
-                )
-            }
-
-            polygons.forEach { polygon ->
-                Polygon(
-                    points = polygon.coordinates.map(Coordinates::toGoogleMapsLatLng),
-                    strokeColor =
-                        Color(polygon.lineColor?.toArgb() ?: android.graphics.Color.BLACK),
-                    strokeWidth = polygon.lineWidth,
-                    fillColor =
-                        Color(polygon.color?.toArgb() ?: android.graphics.Color.TRANSPARENT),
-                    clickable = true,
-                    onClick = {
-                        if (onPolygonClick != null) {
-                            onPolygonClick(polygon)
-                        } else {
-                            onMapClick?.invoke(polygon.coordinates[0])
-                        }
-                    },
-                )
-            }
-
-            polylines.forEach { polyline ->
-                Polyline(
-                    points = polyline.coordinates.map(Coordinates::toGoogleMapsLatLng),
-                    color = Color(polyline.lineColor?.toArgb() ?: android.graphics.Color.BLACK),
-                    width = polyline.width,
-                    clickable = true,
-                    onClick = {
-                        if (onPolylineClick != null) {
-                            onPolylineClick(polyline)
-                        } else {
-                            onMapClick?.invoke(polyline.coordinates[0])
-                        }
-                    },
-                )
-            }
-
-            LaunchedEffect(cameraPositionState.position) {
-                val bounds = cameraPositionState.projection?.visibleRegion?.latLngBounds
-                onCameraMove?.invoke(cameraPositionState.position.toCameraPosition(bounds))
-            }
+    DisposableEffect(mapView) {
+        mapView.onStart()
+        mapView.onResume()
+        onDispose {
+            mapView.onPause()
+            mapView.onStop()
+            mapView.onDestroy()
         }
     }
 }
+
+private fun MapLibreMap.addMapTilerContent(
+    markers: List<Marker>,
+    circles: List<Circle>,
+    polygons: List<Polygon>,
+    polylines: List<Polyline>,
+    onMarkerClick: ((Marker) -> Unit)?,
+) {
+    clear()
+    markers.forEach { marker ->
+        addMarker(MarkerOptions().position(marker.coordinates.toLatLng()).title(marker.title))
+    }
+    setOnMarkerClickListener { nativeMarker ->
+        val marker = markers.firstOrNull { it.title == nativeMarker.title && it.coordinates.toLatLng() == nativeMarker.position }
+        if (marker != null) onMarkerClick?.invoke(marker)
+        onMarkerClick != null
+    }
+
+    val style = style ?: return
+    circles.forEachIndexed { index, circle ->
+        val sourceId = "kmpmaps-circle-source-$index"
+        val layerId = "kmpmaps-circle-layer-$index"
+        style.addSource(GeoJsonSource(sourceId, Feature.fromGeometry(Point.fromLngLat(circle.center.longitude, circle.center.latitude))))
+        style.addLayer(
+            CircleLayer(layerId, sourceId).withProperties(
+                circleRadius(circle.radius.coerceAtMost(30f)),
+                circleColor(circle.color?.toArgb() ?: AndroidColor.argb(80, 38, 132, 255)),
+                circleOpacity(0.5f),
+            ),
+        )
+    }
+    polygons.forEachIndexed { index, polygon ->
+        if (polygon.coordinates.isEmpty()) return@forEachIndexed
+        val sourceId = "kmpmaps-polygon-source-$index"
+        val layerId = "kmpmaps-polygon-layer-$index"
+        val ring = (polygon.coordinates + polygon.coordinates.first()).map { Point.fromLngLat(it.longitude, it.latitude) }
+        style.addSource(GeoJsonSource(sourceId, Feature.fromGeometry(GeoJsonPolygon.fromLngLats(listOf(ring)))))
+        style.addLayer(
+            FillLayer(layerId, sourceId).withProperties(
+                fillColor(polygon.color?.toArgb() ?: AndroidColor.argb(80, 38, 132, 255)),
+                fillOpacity(0.35f),
+            ),
+        )
+    }
+    polylines.forEachIndexed { index, polyline ->
+        val sourceId = "kmpmaps-polyline-source-$index"
+        val layerId = "kmpmaps-polyline-layer-$index"
+        style.addSource(GeoJsonSource(sourceId, FeatureCollection.fromFeature(Feature.fromGeometry(LineString.fromLngLats(polyline.coordinates.map { Point.fromLngLat(it.longitude, it.latitude) })))))
+        style.addLayer(
+            LineLayer(layerId, sourceId).withProperties(
+                lineColor(polyline.lineColor?.toArgb() ?: AndroidColor.BLACK),
+                lineWidth(polyline.width),
+            ),
+        )
+    }
+}
+
+private fun Coordinates.toLatLng(): LatLng = LatLng(latitude, longitude)
+
+private fun MapBounds.toLatLngBounds(): LatLngBounds = LatLngBounds.Builder()
+    .include(southwest.toLatLng())
+    .include(northeast.toLatLng())
+    .build()
+
+private fun CameraPosition.toMapLibreCameraPosition(): MapLibreCameraPosition = MapLibreCameraPosition.Builder()
+    .target(bounds?.toLatLngBounds()?.center ?: coordinates?.toLatLng() ?: LatLng(0.0, 0.0))
+    .zoom((zoom ?: 0f).toDouble())
+    .bearing((androidCameraPosition?.bearing ?: 0f).toDouble())
+    .tilt((androidCameraPosition?.tilt ?: 0f).toDouble())
+    .build()
