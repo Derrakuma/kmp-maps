@@ -1,20 +1,20 @@
 [versions]
 accompanistPermissions = "0.37.3"
-agp = "8.9.3"
-android-compileSdk = "36"
+agp = "9.1.1"
+android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "36"
 androidXActivity = "1.11.0"
 androidXLifecycle = "2.9.4"
 buildkonfig = "0.17.1"
-compose = "1.9.0"
+compose = "1.11.0"
 composeWebViewMultiplatformDesktop = "2.0.3"
 dokka = "2.1.0"
 googleMapsCompose = "6.12.2"
 googleMapsComposeUtils = "6.12.2"
 jetbrainsKotlinJvm = "2.3.0"
 kcef = "2024.04.20.4"
-kotlin = "2.3.0"
+kotlin = "2.3.20"
 kotlinXCoroutines = "1.10.2"
 kotlinXSerializationJson = "1.9.0"
 mavenPublish = "0.34.0"
@@ -39,6 +39,7 @@ maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "mapl
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 buildkonfig = { id = "com.codingfeline.buildkonfig", version.ref = "buildkonfig" }
 jetBrains-compose = { id = "org.jetbrains.compose", version.ref = "compose" }
 jetBrains-dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
